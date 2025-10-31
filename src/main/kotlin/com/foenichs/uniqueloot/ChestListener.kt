@@ -3,6 +3,7 @@
 package com.foenichs.uniqueloot
 
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.format.NamedTextColor
 import org.bukkit.*
 import org.bukkit.block.Barrel
 import org.bukkit.block.Block
@@ -67,8 +68,7 @@ class ChestListener(private val plugin: UniqueLoot) : Listener {
     // Canonical IDs
 
     private fun canonicalId(block: Block): String {
-        val state = block.state
-        return when (state) {
+        return when (val state = block.state) {
             is Chest -> canonicalChestId(state)
             is Barrel -> "${block.world.uid}:${block.x},${block.y},${block.z}"
             else -> "${block.world.uid}:${block.x},${block.y},${block.z}"
@@ -175,19 +175,36 @@ class ChestListener(private val plugin: UniqueLoot) : Listener {
                     }
                 } else {
                     val rng = Random()
-                    val context = LootContext.Builder(block.location).lootedEntity(player).build()
-                    if (isChest) {
-                        val holder = state.inventory.holder
-                        if (holder is DoubleChest) {
-                            (holder.leftSide as? Chest)?.lootTable?.fillInventory(inv, rng, context)
-                            (holder.rightSide as? Chest)?.lootTable?.fillInventory(inv, rng, context)
+
+                    try {
+                        val context = LootContext.Builder(block.location).lootedEntity(player).build()
+                        if (isChest) {
+                            val holder = state.inventory.holder
+                            if (holder is DoubleChest) {
+                                (holder.leftSide as? Chest)?.lootTable?.fillInventory(inv, rng, context)
+                                (holder.rightSide as? Chest)?.lootTable?.fillInventory(inv, rng, context)
+                            } else {
+                                lootTable.fillInventory(inv, rng, context)
+                            }
                         } else {
                             lootTable.fillInventory(inv, rng, context)
                         }
-                    } else {
-                        lootTable.fillInventory(inv, rng, context)
+                    }
+                    catch (ex: IllegalArgumentException)
+                    {
+                        player.sendActionBar(Component.text("Failed to generate loot for this container").color(
+                            NamedTextColor.RED))
+
+                        player.playSound(block.location, Sound.BLOCK_CHEST_LOCKED, 1.0f, 1.0f)
+                        Particle.ANGRY_VILLAGER.builder().location(block.location.add(0.5,0.5,0.5)).count(14).receivers(32, true).spawn()
+
+                        plugin.logger.warning("Failed to fill loot: ${ex.message}")
+
+                        return@Runnable
                     }
                 }
+
+                if (inv.storageContents.size == 0) return@Runnable
 
                 val opened = Opened(inv, block, kind)
                 perPlayer[containerId] = opened
